@@ -4,21 +4,27 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "0 13 * * *"
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      CURRENSEA_BASE: ${{ vars.CURRENSEA_BASE }}
+      CURRENSEA_SYMBOL: ${{ vars.CURRENSEA_SYMBOL }}
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "18"
-      - run: npm install
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci --omit=dev
       - name: Run
         run: npm start
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CURRENSEA_BASE: ${{ vars.CURRENSEA_BASE }}
-          CURRENSEA_SYMBOL: ${{ vars.CURRENSEA_SYMBOL }}

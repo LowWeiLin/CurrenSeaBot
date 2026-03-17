@@ -1,34 +1,88 @@
 require("dotenv").config();
-const axios = require("axios");
-const telegram = require("node-telegram-bot-api");
 
 const { TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, CURRENSEA_BASE, CURRENSEA_SYMBOL } =
   process.env;
-if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
-  console.error("TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set");
-  process.exit(1);
-}
-if (!CURRENSEA_BASE || !CURRENSEA_SYMBOL) {
-  console.error("CURRENSEA_BASE or CURRENSEA_SYMBOL not set");
+const missingEnvVars = [
+  "TELEGRAM_TOKEN",
+  "TELEGRAM_CHAT_ID",
+  "CURRENSEA_BASE",
+  "CURRENSEA_SYMBOL",
+].filter((name) => !process.env[name]);
+
+if (missingEnvVars.length > 0) {
+  console.error(
+    `Missing required environment variables: ${missingEnvVars.join(", ")}`,
+  );
   process.exit(1);
 }
 
-const fetchCurrencyRates = async () => {
-  const url = `https://api.exchangerate.host/latest?base=${CURRENSEA_BASE}&symbols=${CURRENSEA_SYMBOL}`;
-  const { data } = await axios.get(url);
-  return data;
+const baseCurrency = CURRENSEA_BASE.toUpperCase();
+const quoteCurrency = CURRENSEA_SYMBOL.toUpperCase();
+
+const EXCHANGE_RATE_URL = "https://api.exchangerate.fun/latest";
+const TELEGRAM_SEND_MESSAGE_URL = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+
+const fetchCurrencyRate = async () => {
+  const url = new URL(EXCHANGE_RATE_URL);
+
+  url.searchParams.set("base", baseCurrency);
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Exchange rate request failed with status ${response.status}`,
+    );
+  }
+
+  const data = await response.json();
+  const rate = data?.rates?.[quoteCurrency];
+
+  if (typeof rate !== "number") {
+    throw new Error(
+      `Exchange rate API did not return a numeric rate for ${quoteCurrency}`,
+    );
+  }
+
+  return rate;
+};
+
+const sendTelegramMessage = async (message) => {
+  const response = await fetch(TELEGRAM_SEND_MESSAGE_URL, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      text: message,
+    }),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data?.ok) {
+    const description = data?.description ? `: ${data.description}` : "";
+    throw new Error(
+      `Telegram sendMessage failed with status ${response.status}${description}`,
+    );
+  }
 };
 
 const main = async () => {
-  const { rates } = await fetchCurrencyRates();
-  const bot = new telegram(process.env.TELEGRAM_TOKEN);
-  const msg = `${CURRENSEA_BASE}/${CURRENSEA_SYMBOL} = ${rates[CURRENSEA_SYMBOL]}`;
+  const rate = await fetchCurrencyRate();
+  const msg = `${baseCurrency}/${quoteCurrency} = ${rate}`;
+
   console.log(`Sending to [${TELEGRAM_CHAT_ID}] msg [${msg}]`);
-  bot.sendMessage(TELEGRAM_CHAT_ID, msg);
+  await sendTelegramMessage(msg);
 };
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error(error);
-}
+  process.exit(1);
+});
